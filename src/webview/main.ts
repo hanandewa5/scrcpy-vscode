@@ -75,6 +75,9 @@ declare global {
       systemShortcuts: string;
       notificationPanel: string;
       settingsPanel: string;
+      stayAwake: string;
+      screenOff: string;
+      power: string;
     };
   }
 }
@@ -93,6 +96,8 @@ interface DeviceUISettings {
   showLayoutBounds: boolean;
   orientation: 'portrait' | 'landscape' | 'auto';
   audioEnabled: boolean;
+  stayAwake: boolean;
+  screenOff: boolean;
 }
 
 // Tool status tracking (derived from state snapshot)
@@ -1808,6 +1813,8 @@ function openControlCenter() {
     showLayoutBounds: false,
     orientation: 'auto',
     audioEnabled: !isMuted,
+    stayAwake: false,
+    screenOff: false,
   };
 
   // If we have cached settings, show them enabled immediately
@@ -2265,6 +2272,29 @@ function renderControlCenterForm(settings: DeviceUISettings, disabled: boolean) 
   );
 
   controlCenterContent.appendChild(displayGroup);
+
+  // === POWER GROUP ===
+  // Inline icons for power group (kept local to avoid touching the shared icon maps)
+  const powerGroupIcon =
+    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.56,5.44L15.11,6.89C16.84,7.94 18,9.83 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12C6,9.83 7.16,7.94 8.88,6.88L7.44,5.44C5.36,6.88 4,9.28 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12C20,9.28 18.64,6.88 16.56,5.44M13,3H11V13H13"/></svg>';
+  const stayAwakeIcon =
+    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A1.5,1.5 0 0,0 6,14.5A1.5,1.5 0 0,0 7.5,16A1.5,1.5 0 0,0 9,14.5A1.5,1.5 0 0,0 7.5,13M16.5,13A1.5,1.5 0 0,0 15,14.5A1.5,1.5 0 0,0 16.5,16A1.5,1.5 0 0,0 18,14.5A1.5,1.5 0 0,0 16.5,13M8,18V20H10V18H8M11,18V20H13V18H11M14,18V20H16V18H14Z"/></svg>';
+  const screenOffIcon =
+    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21,17H6.83L19.17,4.66C20.18,4.84 21,5.74 21,6.83V17M1.92,1.65L0.65,2.92L2.47,4.74C2.18,5.08 2,5.5 2,6V17A2,2 0 0,0 4,19H17.74L20.09,21.35L21.36,20.08L3.89,2.62L1.92,1.65M22,21H10V19L8,21V22H16V21H22Z"/></svg>';
+
+  const powerGroup = createSettingsGroup('power', window.l10n.power, powerGroupIcon);
+
+  const stayAwakeToggle = createToggleSwitch('stayAwake', settings.stayAwake, disabled);
+  powerGroup.appendChild(
+    createSettingsRow(window.l10n.stayAwake, stayAwakeToggle, stayAwakeIcon, 'icon-power')
+  );
+
+  const screenOffToggle = createToggleSwitch('screenOff', settings.screenOff, disabled);
+  powerGroup.appendChild(
+    createSettingsRow(window.l10n.screenOff, screenOffToggle, screenOffIcon, 'icon-power')
+  );
+
+  controlCenterContent.appendChild(powerGroup);
 
   // === APPEARANCE GROUP ===
   const appearanceGroup = createSettingsGroup(

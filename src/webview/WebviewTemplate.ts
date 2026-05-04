@@ -76,6 +76,9 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     systemShortcuts: vscode.l10n.t('System Shortcuts'),
     notificationPanel: vscode.l10n.t('Notification Panel'),
     settingsPanel: vscode.l10n.t('Settings Panel'),
+    stayAwake: vscode.l10n.t('Stay Awake'),
+    screenOff: vscode.l10n.t('Screen Off'),
+    power: vscode.l10n.t('Power'),
   };
 
   return `<!DOCTYPE html>

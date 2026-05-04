@@ -1126,6 +1126,7 @@ export class DeviceService {
       layoutBoundsResult,
       autoRotateResult,
       userRotationResult,
+      stayAwakeResult,
     ] = await Promise.all([
       execAdb(['shell', 'cmd', 'uimode', 'night']).catch(() => ''),
       execAdb(['shell', 'cmd', 'overlay', 'list']).catch(() => ''),
@@ -1137,6 +1138,7 @@ export class DeviceService {
       execAdb(['shell', 'getprop', 'debug.layout']).catch(() => ''),
       execAdb(['shell', 'settings', 'get', 'system', 'accelerometer_rotation']).catch(() => '1'),
       execAdb(['shell', 'settings', 'get', 'system', 'user_rotation']).catch(() => '0'),
+      execAdb(['shell', 'settings', 'get', 'global', 'stay_on_while_plugged_in']).catch(() => '0'),
     ]);
 
     // Parse dark mode from "cmd uimode night" output (e.g., "Night mode: yes")
@@ -1209,6 +1211,10 @@ export class DeviceService {
       defaultDensity,
       showLayoutBounds,
       orientation,
+      stayAwake: (parseInt(stayAwakeResult.trim(), 10) || 0) > 0,
+      // The display power state cannot be reliably queried; assume on at session start
+      // and let the user toggle it. Cached value will be used on subsequent opens.
+      screenOff: false,
     };
   }
 
@@ -1343,6 +1349,26 @@ export class DeviceService {
           await execAdb(['shell', 'settings', 'put', 'system', 'user_rotation', rotation]);
           await execAdb(['shell', 'settings', 'put', 'system', 'accelerometer_rotation', '0']);
         }
+        break;
+      }
+
+      case 'stayAwake': {
+        // 7 = USB | AC | Wireless (stay awake on any charger), 0 = off
+        const stayValue = value ? '7' : '0';
+        await execAdb([
+          'shell',
+          'settings',
+          'put',
+          'global',
+          'stay_on_while_plugged_in',
+          stayValue,
+        ]);
+        break;
+      }
+
+      case 'screenOff': {
+        // Use scrcpy SET_DISPLAY_POWER control message (display off, mirroring continues)
+        session.connection.setDisplayPower(!value);
         break;
       }
     }

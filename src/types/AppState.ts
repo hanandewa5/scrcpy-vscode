@@ -90,6 +90,8 @@ export interface DeviceUISettings {
   defaultDensity: number;
   showLayoutBounds: boolean;
   orientation: Orientation;
+  stayAwake: boolean;
+  screenOff: boolean;
 }
 
 /**

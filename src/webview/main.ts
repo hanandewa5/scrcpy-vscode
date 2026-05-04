@@ -228,6 +228,11 @@ let currentControlCenterSettings: DeviceUISettings | null = null;
 const pendingSettingChanges = new Set<string>();
 const controlCenterCache = new Map<string, DeviceUISettings>();
 
+/** Get the serial of the active device (stable cache key across reconnections) */
+function getActiveSerial(): string | undefined {
+  return activeDeviceId ? sessions.get(activeDeviceId)?.deviceInfo.serial : undefined;
+}
+
 // Device info tooltip
 let deviceInfoTooltip: HTMLElement | null = null;
 const deviceInfoCache = new Map<string, DeviceDetailedInfo>();
@@ -852,10 +857,10 @@ function handleMessage(event: MessageEvent) {
       break;
 
     case 'controlCenterCacheLoaded':
-      // Populate cache from persisted storage
+      // Populate cache from persisted storage (keyed by serial)
       if (message.cache) {
-        for (const [deviceId, settings] of Object.entries(message.cache)) {
-          controlCenterCache.set(deviceId, settings as DeviceUISettings);
+        for (const [serial, settings] of Object.entries(message.cache)) {
+          controlCenterCache.set(serial, settings as DeviceUISettings);
         }
       }
       break;
@@ -1800,8 +1805,9 @@ function openControlCenter() {
     return;
   }
 
-  // Use cached settings if available, otherwise use defaults
-  const cachedSettings = controlCenterCache.get(activeDeviceId);
+  // Use cached settings if available (keyed by serial for stability across reconnections)
+  const serial = getActiveSerial();
+  const cachedSettings = serial ? controlCenterCache.get(serial) : undefined;
   const initialSettings: DeviceUISettings = cachedSettings || {
     darkMode: 'auto',
     navigationMode: 'gestural',
@@ -1869,8 +1875,17 @@ function handleControlCenterLoaded(settings: DeviceUISettings) {
     return;
   }
 
-  // Cache settings for this device
-  controlCenterCache.set(activeDeviceId, settings);
+  // screenOff cannot be reliably queried from the device, so preserve the
+  // last known cached value rather than overwriting it with the default.
+  const serial = getActiveSerial();
+  if (serial) {
+    const cached = controlCenterCache.get(serial);
+    if (cached && typeof cached.screenOff === 'boolean') {
+      settings.screenOff = cached.screenOff;
+    }
+    // Cache settings for this device (keyed by serial)
+    controlCenterCache.set(serial, settings);
+  }
 
   currentControlCenterSettings = settings;
   renderControlCenterForm(settings, false); // false = enabled
@@ -2716,10 +2731,11 @@ function applyControlCenterSetting(setting: string, value: unknown, control: HTM
   pendingSettingChanges.add(setting);
   control.classList.add('loading');
 
-  // Update current settings and cache optimistically
-  if (currentControlCenterSettings && activeDeviceId) {
+  // Update current settings and cache optimistically (keyed by serial)
+  const serial = getActiveSerial();
+  if (currentControlCenterSettings && serial) {
     (currentControlCenterSettings as unknown as Record<string, unknown>)[setting] = value;
-    controlCenterCache.set(activeDeviceId, { ...currentControlCenterSettings });
+    controlCenterCache.set(serial, { ...currentControlCenterSettings });
   }
 
   // Send to extension

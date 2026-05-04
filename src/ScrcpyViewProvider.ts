@@ -752,14 +752,14 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
 
       case 'openControlCenter':
         if (this._deviceService) {
-          const deviceId = this._appState?.getActiveDeviceId();
+          const activeDevice = this._appState?.getActiveDevice();
           try {
             const settings = await this._deviceService.getDeviceUISettings();
-            // Save to persistent cache
-            if (deviceId) {
+            // Save to persistent cache (keyed by serial for stability across reconnections)
+            if (activeDevice) {
               this._appState?.dispatch({
                 type: ActionType.SAVE_CONTROL_CENTER_TO_CACHE,
-                payload: { deviceId, settings },
+                payload: { deviceId: activeDevice.serial, settings },
               });
             }
             this._view?.webview.postMessage({
@@ -777,18 +777,18 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
 
       case 'applyControlCenterSetting':
         if (this._deviceService && message.setting && message.value !== undefined) {
-          const deviceId = this._appState?.getActiveDeviceId();
+          const activeDevice = this._appState?.getActiveDevice();
           try {
             await this._deviceService.applyDeviceUISetting(
               message.setting as keyof DeviceUISettings,
               message.value as DeviceUISettings[keyof DeviceUISettings]
             );
-            // Update persistent cache
-            if (deviceId) {
+            // Update persistent cache (keyed by serial)
+            if (activeDevice) {
               this._appState?.dispatch({
                 type: ActionType.UPDATE_DEVICE_SETTING_IN_CACHE,
                 payload: {
-                  deviceId,
+                  deviceId: activeDevice.serial,
                   setting: message.setting as keyof DeviceUISettings,
                   value: message.value as DeviceUISettings[keyof DeviceUISettings],
                 },

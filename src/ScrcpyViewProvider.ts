@@ -755,6 +755,13 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
           const activeDevice = this._appState?.getActiveDevice();
           try {
             const settings = await this._deviceService.getDeviceUISettings();
+            // Preserve cached screenOff (cannot be queried from device)
+            if (activeDevice) {
+              const cached = this._appState?.getControlCenterCache()[activeDevice.serial];
+              if (cached?.screenOff !== undefined) {
+                settings.screenOff = cached.screenOff;
+              }
+            }
             // Save to persistent cache (keyed by serial for stability across reconnections)
             if (activeDevice) {
               this._appState?.dispatch({

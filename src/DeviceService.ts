@@ -679,6 +679,18 @@ export class DeviceService {
       // Clear any loading status message now that we're connected
       this.appState.dispatch({ type: ActionType.SET_STATUS_MESSAGE, payload: undefined });
 
+      // Apply cached screenOff state (Control Center toggle overrides VS Code setting)
+      const cachedSettings = this.appState.getControlCenterCache()[session.deviceInfo.serial];
+      if (cachedSettings && typeof cachedSettings.screenOff === 'boolean' && session.connection) {
+        // Cache exists — use its value (overrides config.screenOff applied earlier)
+        if (cachedSettings.screenOff) {
+          setTimeout(() => session.connection?.setDisplayPower(false), 150);
+        } else if (this.config.screenOff) {
+          // Cache says screen ON but config said OFF — undo the config's setDisplayPower
+          setTimeout(() => session.connection?.setDisplayPower(true), 150);
+        }
+      }
+
       // Notify if we fell back to a different codec
       if (session.effectiveCodec !== this.config.videoCodec) {
         this.statusCallback(

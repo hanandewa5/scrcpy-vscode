@@ -142,6 +142,7 @@ interface AppStateSnapshot {
     showExtendedStats: boolean;
     audioEnabled: boolean;
     showTouchRipples: boolean;
+    multiDevice: boolean;
   };
   toolStatus: {
     adbAvailable: boolean;
@@ -206,6 +207,7 @@ let activeDeviceId: string | null = null;
 let showStats = false;
 let showExtendedStats = false;
 let showTouchRipples = false;
+let multiDevice = true;
 let isMuted = false;
 let screenshotBtn: HTMLElement | null = null;
 let recordBtn: HTMLElement | null = null;
@@ -685,6 +687,16 @@ function handleStateSnapshot(state: AppStateSnapshot): void {
     });
   }
 
+  if (state.settings.multiDevice !== multiDevice) {
+    multiDevice = state.settings.multiDevice;
+    if (addDeviceBtn) {
+      addDeviceBtn.classList.toggle('hidden', !multiDevice);
+    }
+    if (!multiDevice) {
+      tabBar.classList.add('hidden');
+    }
+  }
+
   if (state.settings.audioEnabled !== !isMuted) {
     updateAudioState(state.settings.audioEnabled);
   }
@@ -768,8 +780,8 @@ function handleStateSnapshot(state: AppStateSnapshot): void {
     hideStatus();
   }
 
-  // 7. Show tab bar if we have sessions
-  if (state.devices.length > 0) {
+  // 7. Show tab bar if we have sessions (only in multi-device mode)
+  if (state.devices.length > 0 && multiDevice) {
     tabBar.classList.remove('hidden');
   }
 }
@@ -883,7 +895,9 @@ function handleVideoFrame(message: {
     // Hide status and show UI once we're receiving frames for active device
     if (message.deviceId === activeDeviceId && session.canvas.width > 0) {
       session.canvas.classList.remove('hidden');
-      tabBar.classList.remove('hidden');
+      if (multiDevice) {
+        tabBar.classList.remove('hidden');
+      }
       hideStatus();
       if (controlToolbar) {
         controlToolbar.classList.remove('hidden');

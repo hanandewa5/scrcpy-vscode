@@ -504,6 +504,15 @@ export class DeviceService {
       throw new Error(vscode.l10n.t('Device already connected'));
     }
 
+    // Enforce single-device mode when multi-device is disabled
+    if (!this.appState.getSettings().multiDevice && this.sessions.size > 0) {
+      throw new Error(
+        vscode.l10n.t(
+          'Multi-device mode is disabled. Disconnect the current device or enable "scrcpy.multiDevice" in settings.'
+        )
+      );
+    }
+
     const deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     // Create internal session
@@ -1562,6 +1571,10 @@ export class DeviceService {
 
         // Only auto-connect if allowed (user has connected once before)
         if (this.appState.isAllowedAutoConnectDevice(device.serial)) {
+          // Respect single-device mode
+          if (!this.appState.getSettings().multiDevice && this.sessions.size > 0) {
+            continue;
+          }
           this.statusCallback('', vscode.l10n.t('Connecting to {0}...', device.name));
 
           try {

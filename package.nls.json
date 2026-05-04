@@ -65,6 +65,7 @@
   "config.scrcpy.recordingSavePath": "Default folder for saving recordings. Leave empty to use the Downloads folder. [Choose directory](command:scrcpy.browseRecordingPath \"Select recordings folder\") | [Reset](command:scrcpy.resetRecordingPath \"Use Downloads folder\")",
   "config.scrcpy.recordingShowSaveDialog": "Show save dialog instead of saving directly to the default folder",
   "config.scrcpy.apkInstallDefaultPath": "Default folder for the APK file picker. Leave empty to use the Downloads folder. [Choose directory](command:scrcpy.browseApkInstallPath \"Select APK folder\") | [Reset](command:scrcpy.resetApkInstallPath \"Use Downloads folder\")",
+  "config.scrcpy.multiDevice": "Allow connecting to multiple devices at once. When disabled, only one device can be mirrored at a time and the \"+\" tab button is hidden.",
   "config.scrcpy.autoConnect": "Automatically connect to devices when they are plugged in",
   "config.scrcpy.autoReconnect": "Automatically attempt to reconnect when connection is lost",
   "config.scrcpy.reconnectRetries": "Number of reconnection attempts before showing error. *Only applies when `#scrcpy.autoReconnect#` is enabled.*",

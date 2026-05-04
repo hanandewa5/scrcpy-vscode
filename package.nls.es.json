@@ -37,6 +37,7 @@
   "config.scrcpy.screenshotSavePath": "Carpeta predeterminada para guardar capturas. Dejar vacío para usar la carpeta de Descargas.",
   "config.scrcpy.screenshotShowSaveDialog": "Mostrar diálogo de guardar en lugar de guardar directamente en la carpeta predeterminada",
   "config.scrcpy.apkInstallDefaultPath": "Carpeta predeterminada para el selector de archivos APK. Dejar vacío para usar la carpeta de Descargas.",
+  "config.scrcpy.multiDevice": "Permitir conectar varios dispositivos a la vez. Cuando está desactivado, solo se puede reflejar un dispositivo y el botón \"+\" se oculta.",
   "config.scrcpy.autoConnect": "Conectar automáticamente a dispositivos cuando se enchufan",
   "config.scrcpy.autoReconnect": "Intentar reconectar automáticamente cuando se pierde la conexión",
   "config.scrcpy.reconnectRetries": "Número de intentos de reconexión antes de mostrar error. *Solo aplica cuando `#scrcpy.autoReconnect#` está habilitado.*",

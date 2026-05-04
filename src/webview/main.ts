@@ -354,6 +354,16 @@ function initialize() {
     });
   }
 
+  // Disconnect button
+  const disconnectBtn = document.getElementById('disconnect-btn');
+  if (disconnectBtn) {
+    disconnectBtn.addEventListener('click', () => {
+      if (activeDeviceId) {
+        vscode.postMessage({ type: 'closeTab', deviceId: activeDeviceId });
+      }
+    });
+  }
+
   // Recording indicator elements
   recordingIndicator = document.getElementById('recording-indicator');
   recordingTime = document.getElementById('recording-time');

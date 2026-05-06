@@ -7,6 +7,8 @@
 import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import * as QRCode from 'qrcode';
 import { getHtmlForWebview } from './webview/WebviewTemplate';
 import { ScrcpyConfig } from './ScrcpyConnection';
 import { DeviceService } from './DeviceService';
@@ -858,9 +860,48 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Pair with a new device using Android 11+ Wireless Debugging
+   * Pair with a new device using Android 11+ Wireless Debugging.
+   *
+   * Offers two methods (matching Android Studio):
+   *  - Pair using QR code (workstation generates QR, device scans it)
+   *  - Pair using 6-digit pairing code (manual entry)
    */
   private async _pairWifiDevice(): Promise<void> {
+    const method = await vscode.window.showQuickPick(
+      [
+        {
+          label: vscode.l10n.t('$(symbol-event) Pair using QR code'),
+          description: vscode.l10n.t('Scan QR with "Pair device with QR code" on your device'),
+          value: 'qr',
+        },
+        {
+          label: vscode.l10n.t('$(symbol-numeric) Pair using pairing code'),
+          description: vscode.l10n.t('Enter the 6-digit code from your device'),
+          value: 'code',
+        },
+      ],
+      {
+        placeHolder: vscode.l10n.t('How do you want to pair?'),
+        title: vscode.l10n.t('Pair Device over WiFi'),
+      }
+    );
+
+    if (!method) {
+      return;
+    }
+
+    if (method.value === 'qr') {
+      await this._pairWifiDeviceWithQR();
+    } else {
+      await this._pairWifiDeviceWithCode();
+    }
+  }
+
+  /**
+   * Manual pairing flow (legacy): user reads pairing address and 6-digit
+   * code from the device and types them into input boxes.
+   */
+  private async _pairWifiDeviceWithCode(): Promise<void> {
     // Step 1: Get pairing address (IP:port from Wireless debugging > Pair device)
     const pairingAddress = await vscode.window.showInputBox({
       title: vscode.l10n.t('Pair Device (Step 1/2)'),
@@ -966,6 +1007,236 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
     }
 
     await this._connectWifiDeviceWithAddress(connectAddress);
+  }
+
+  /**
+   * QR-code pairing flow (Android Studio style).
+   *
+   * 1. Generate a random mDNS service name + password.
+   * 2. Display a QR code in a webview panel encoding
+   *      WIFI:T:ADB;S:<service>;P:<password>;;
+   * 3. User opens "Wireless debugging > Pair device with QR code" on the
+   *    device and scans the QR. The device then advertises a
+   *    `_adb-tls-pairing._tcp` service with that instance name.
+   * 4. Poll `adb mdns services` to discover the pairing host:port.
+   * 5. Run `adb pair <addr> <password>`.
+   * 6. Prompt for the connection address and connect.
+   */
+  private async _pairWifiDeviceWithQR(): Promise<void> {
+    if (!this._deviceService) {
+      this._initializeAndConnect();
+    }
+    if (!this._deviceService) {
+      vscode.window.showErrorMessage(vscode.l10n.t('Failed to initialize device service'));
+      return;
+    }
+
+    // Random service name (Android Studio uses "studio-XXXXXXXX") and
+    // password. The device only requires they match what's in the QR.
+    const serviceName = `vscode-${crypto.randomBytes(4).toString('hex')}`;
+    const password = crypto.randomBytes(8).toString('hex');
+    const qrPayload = `WIFI:T:ADB;S:${serviceName};P:${password};;`;
+
+    let qrDataUrl: string;
+    try {
+      qrDataUrl = await QRCode.toDataURL(qrPayload, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 320,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      vscode.window.showErrorMessage(vscode.l10n.t('Failed to generate QR code: {0}', message));
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      'scrcpyPairQR',
+      vscode.l10n.t('Pair Device with QR Code'),
+      vscode.ViewColumn.Active,
+      { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    const cancelController = new AbortController();
+    let panelDisposed = false;
+    panel.onDidDispose(() => {
+      panelDisposed = true;
+      cancelController.abort();
+    });
+    panel.webview.onDidReceiveMessage((msg) => {
+      if (msg?.type === 'cancel') {
+        cancelController.abort();
+        panel.dispose();
+      }
+    });
+
+    panel.webview.html = this._getQRPairHtml(qrDataUrl, serviceName);
+
+    // Wait for the device to scan the QR and advertise itself via mDNS.
+    let pairingAddress: string;
+    try {
+      pairingAddress = await this._deviceService.findMdnsPairingService(
+        serviceName,
+        120000,
+        cancelController.signal
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!panelDisposed) {
+        panel.dispose();
+      }
+      if (message !== 'aborted') {
+        vscode.window.showErrorMessage(vscode.l10n.t('QR pairing failed: {0}', message));
+      }
+      return;
+    }
+
+    panel.webview.postMessage({ type: 'pairing', address: pairingAddress });
+
+    try {
+      await this._deviceService.pairWifiWithPassword(pairingAddress, password);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!panelDisposed) {
+        panel.dispose();
+      }
+      vscode.window.showErrorMessage(vscode.l10n.t('Pairing failed: {0}', message));
+      return;
+    }
+
+    if (!panelDisposed) {
+      panel.dispose();
+    }
+
+    vscode.window.showInformationMessage(
+      vscode.l10n.t('Device paired successfully! Now connecting...')
+    );
+
+    // After pairing, the device's connection port differs from the pairing
+    // port. Ask the user for the connection address shown in Wireless
+    // debugging (typically <ip>:5555 or whatever the device displays).
+    const ip = pairingAddress.split(':')[0];
+    const connectAddress = await vscode.window.showInputBox({
+      title: vscode.l10n.t('Connect to Paired Device'),
+      prompt: vscode.l10n.t(
+        'Enter the connection address shown in Wireless debugging (not the pairing address)'
+      ),
+      placeHolder: `${ip}:5555`,
+      value: ip,
+      validateInput: (value) => {
+        if (!value) {
+          return vscode.l10n.t('Connection address is required');
+        }
+        const ipPortRegex = /^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/;
+        if (!ipPortRegex.test(value)) {
+          return vscode.l10n.t('Enter address as IP or IP:port');
+        }
+        return undefined;
+      },
+    });
+
+    if (!connectAddress) {
+      return;
+    }
+
+    await this._connectWifiDeviceWithAddress(connectAddress);
+  }
+
+  /**
+   * Build the HTML for the QR pairing webview panel. The QR is a data URL
+   * generated server-side; no scripts other than a tiny status updater.
+   */
+  private _getQRPairHtml(qrDataUrl: string, serviceName: string): string {
+    const nonce = crypto.randomBytes(16).toString('base64');
+    const csp =
+      `default-src 'none'; img-src data:; style-src 'unsafe-inline'; ` +
+      `script-src 'nonce-${nonce}';`;
+    const title = vscode.l10n.t('Pair Device with QR Code');
+    const step1 = vscode.l10n.t(
+      'On your Android device, open Settings → Developer options → Wireless debugging.'
+    );
+    const step2 = vscode.l10n.t('Tap "Pair device with QR code".');
+    const step3 = vscode.l10n.t('Point the camera at the QR code below.');
+    const waiting = vscode.l10n.t('Waiting for device to scan…');
+    const cancelLabel = vscode.l10n.t('Cancel');
+    const serviceLabel = vscode.l10n.t('Service: {0}', serviceName);
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="${csp}" />
+<title>${title}</title>
+<style>
+  body {
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-foreground);
+    background: var(--vscode-editor-background);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  h1 { font-size: 1.4em; margin: 0; }
+  ol { max-width: 480px; line-height: 1.6; }
+  .qr {
+    background: #fff;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .qr img { display: block; width: 320px; height: 320px; }
+  .status {
+    font-size: 0.95em;
+    opacity: 0.85;
+    min-height: 1.5em;
+  }
+  .meta {
+    font-size: 0.8em;
+    opacity: 0.6;
+    font-family: var(--vscode-editor-font-family, monospace);
+  }
+  button {
+    background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover {
+    background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+  }
+</style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <ol>
+    <li>${step1}</li>
+    <li>${step2}</li>
+    <li>${step3}</li>
+  </ol>
+  <div class="qr"><img src="${qrDataUrl}" alt="QR" /></div>
+  <div class="status" id="status">${waiting}</div>
+  <div class="meta">${serviceLabel}</div>
+  <button id="cancel">${cancelLabel}</button>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    document.getElementById('cancel').addEventListener('click', () => {
+      vscode.postMessage({ type: 'cancel' });
+    });
+    window.addEventListener('message', (e) => {
+      const msg = e.data;
+      if (msg && msg.type === 'pairing') {
+        document.getElementById('status').textContent =
+          ${JSON.stringify(vscode.l10n.t('Pairing with {0}…', '$ADDR'))}.replace('$ADDR', msg.address);
+      }
+    });
+  </script>
+</body>
+</html>`;
   }
 
   /**

@@ -32,6 +32,9 @@ const extensionConfig = {
   infrastructureLogging: {
     level: 'log',
   },
+  watchOptions: {
+    ignored: ['**/out/**', '**/node_modules/**'],
+  },
 };
 
 /** @type {import('webpack').Configuration} */

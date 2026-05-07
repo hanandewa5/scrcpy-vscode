@@ -1339,13 +1339,9 @@ function showStatus(text: string) {
   }
 
   // Hide icons if they exist
-  const emptyIcon = statusElement.querySelector('.empty-icon') as HTMLElement;
-  if (emptyIcon) {
-    emptyIcon.style.display = 'none';
-  }
-  const errorIcon = statusElement.querySelector('.error-icon') as HTMLElement;
-  if (errorIcon) {
-    errorIcon.style.display = 'none';
+  const icon = statusElement.querySelector('.status-icon') as HTMLElement;
+  if (icon) {
+    icon.style.display = 'none';
   }
 
   // Remove buttons if exists
@@ -1375,12 +1371,11 @@ function showError(text: string) {
   }
 
   // Show disconnected icon
-  let errorIcon = statusElement.querySelector('.error-icon') as HTMLElement;
-  if (!errorIcon) {
-    errorIcon = document.createElement('div');
-    errorIcon.className = 'error-icon';
-    // Disconnected/unplugged icon
-    errorIcon.innerHTML = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  let icon = statusElement.querySelector('.status-icon') as HTMLElement;
+  if (!icon) {
+    icon = document.createElement('div');
+    icon.className = 'status-icon error-icon';
+    icon.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <line x1="1" y1="1" x2="23" y2="23"></line>
       <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
       <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
@@ -1389,16 +1384,10 @@ function showError(text: string) {
       <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
       <line x1="12" y1="20" x2="12.01" y2="20"></line>
     </svg>`;
-    errorIcon.style.cssText = 'margin-bottom: 12px; opacity: 0.6;';
-    statusElement.insertBefore(errorIcon, statusTextElement);
+    statusElement.insertBefore(icon, statusTextElement);
   }
-  errorIcon.style.display = 'block';
-
-  // Hide empty icon if exists
-  const emptyIcon = statusElement.querySelector('.empty-icon') as HTMLElement;
-  if (emptyIcon) {
-    emptyIcon.style.display = 'none';
-  }
+  icon.className = 'status-icon error-icon';
+  icon.style.display = 'block';
 
   // Remove existing buttons
   let btnContainer = statusElement.querySelector('.button-container') as HTMLElement;
@@ -1406,15 +1395,15 @@ function showError(text: string) {
     btnContainer.remove();
   }
 
-  // Create button container with only reconnect button
+  // Create button container
   btnContainer = document.createElement('div');
   btnContainer.className = 'button-container';
   btnContainer.style.cssText =
-    'display: flex; gap: 8px; justify-content: center; margin-top: 12px;';
+    'display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 14px; width: 100%; max-width: 260px;';
   statusElement.appendChild(btnContainer);
 
   const reconnectBtn = document.createElement('button');
-  reconnectBtn.className = 'reconnect-btn';
+  reconnectBtn.className = 'status-btn primary';
   reconnectBtn.textContent = window.l10n.reconnect;
   reconnectBtn.onclick = () => {
     vscode.postMessage({ type: 'reconnect' });
@@ -1444,23 +1433,12 @@ function showEmptyState() {
     spinner.style.display = 'none';
   }
 
-  // Hide error icon if exists
-  const errorIcon = statusElement.querySelector('.error-icon') as HTMLElement;
-  if (errorIcon) {
-    errorIcon.style.display = 'none';
-  }
-
-  // Get or create empty icon
-  let emptyIcon = statusElement.querySelector('.empty-icon') as HTMLElement;
-  if (!emptyIcon) {
-    emptyIcon = document.createElement('div');
-    emptyIcon.className = 'empty-icon';
-    emptyIcon.innerHTML = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
-      <line x1="12" y1="18" x2="12" y2="18"></line>
-    </svg>`;
-    emptyIcon.style.cssText = 'margin-bottom: 12px; opacity: 0.5;';
-    statusElement.insertBefore(emptyIcon, statusTextElement);
+  // Get or create status icon
+  let icon = statusElement.querySelector('.status-icon') as HTMLElement;
+  if (!icon) {
+    icon = document.createElement('div');
+    icon.className = 'status-icon';
+    statusElement.insertBefore(icon, statusTextElement);
   }
 
   // Remove existing buttons/alerts
@@ -1473,13 +1451,18 @@ function showEmptyState() {
   btnContainer = document.createElement('div');
   btnContainer.className = 'button-container';
   btnContainer.style.cssText =
-    'display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 12px;';
+    'display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 14px; width: 100%; max-width: 260px;';
   statusElement.appendChild(btnContainer);
 
   if (toolsAvailable) {
-    // Show normal empty state
-    statusElement.classList.remove('warning');
-    emptyIcon.style.display = 'block';
+    // Show normal empty state — phone icon
+    icon.className = 'status-icon';
+    icon.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+      <line x1="12" y1="18" x2="12" y2="18"></line>
+    </svg>`;
+    icon.style.display = 'block';
+
     statusTextElement.style.display = '';
     statusTextElement.textContent = window.l10n.noDevicesConnected;
     statusTextElement.classList.remove('error');
@@ -1491,7 +1474,7 @@ function showEmptyState() {
     btnContainer.appendChild(qrContainer);
 
     const pairBtn = document.createElement('button');
-    pairBtn.className = 'reconnect-btn primary';
+    pairBtn.className = 'status-btn primary';
     pairBtn.textContent = window.l10n.pairWithQR;
     pairBtn.onclick = () => {
       if (!qrPairingActive) {
@@ -1501,35 +1484,23 @@ function showEmptyState() {
     btnContainer.appendChild(pairBtn);
 
     const addBtn = document.createElement('button');
-    addBtn.className = 'reconnect-btn';
+    addBtn.className = 'status-btn';
     addBtn.textContent = window.l10n.addDevice;
     addBtn.onclick = () => {
       vscode.postMessage({ type: 'showDevicePicker' });
     };
     btnContainer.appendChild(addBtn);
   } else {
-    // Show warning state
-    statusElement.classList.add('warning');
-    emptyIcon.style.display = 'none';
-    statusTextElement.style.display = 'none';
-
-    // Title row with icon and text
-    const titleRow = document.createElement('div');
-    titleRow.className = 'warning-title-row';
-
-    const warningIcon = document.createElement('div');
-    warningIcon.className = 'warning-icon';
-    warningIcon.innerHTML = `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+    // Show warning state — warning icon
+    icon.className = 'status-icon warning-icon';
+    icon.innerHTML = `<svg width="36" height="36" viewBox="0 0 16 16" fill="currentColor">
       <path fill-rule="evenodd" clip-rule="evenodd" d="M7.56 1h.88l6.54 12.26-.44.74H1.44l-.42-.74L7.56 1zm.44 1.7L2.43 13H13.57L8 2.7zM8.5 12h-1V7h1v5zm-1-6V5h1v1h-1z"/>
     </svg>`;
+    icon.style.display = 'block';
 
-    const title = document.createElement('span');
-    title.className = 'warning-title';
-    title.textContent = window.l10n.missingDependency;
-
-    titleRow.appendChild(warningIcon);
-    titleRow.appendChild(title);
-    btnContainer.appendChild(titleRow);
+    statusTextElement.style.display = '';
+    statusTextElement.textContent = window.l10n.missingDependency;
+    statusTextElement.classList.remove('error');
 
     // Subtitle with specific message
     const subtitle = document.createElement('div');
@@ -1543,27 +1514,21 @@ function showEmptyState() {
     }
     btnContainer.appendChild(subtitle);
 
-    // Action buttons row
-    const actionsRow = document.createElement('div');
-    actionsRow.style.cssText = 'display: flex; gap: 8px; margin-top: 16px;';
-
     const installBtn = document.createElement('button');
-    installBtn.className = 'reconnect-btn primary';
+    installBtn.className = 'status-btn primary';
     installBtn.textContent = window.l10n.install;
     installBtn.onclick = () => {
       vscode.postMessage({ type: 'openInstallDocs' });
     };
+    btnContainer.appendChild(installBtn);
 
-    const settingsBtn = document.createElement('button');
-    settingsBtn.className = 'reconnect-btn';
-    settingsBtn.textContent = window.l10n.settings;
-    settingsBtn.onclick = () => {
+    const settingsLink = document.createElement('button');
+    settingsLink.className = 'status-link';
+    settingsLink.textContent = window.l10n.settings;
+    settingsLink.onclick = () => {
       vscode.postMessage({ type: 'openSettings' });
     };
-
-    actionsRow.appendChild(installBtn);
-    actionsRow.appendChild(settingsBtn);
-    btnContainer.appendChild(actionsRow);
+    btnContainer.appendChild(settingsLink);
   }
 
   statusElement.classList.remove('hidden');
@@ -1580,9 +1545,9 @@ function handleQRPairingData(qrDataUrl: string): void {
   }
 
   // Hide the phone icon when showing QR
-  const emptyIcon = statusElement.querySelector('.empty-icon') as HTMLElement;
-  if (emptyIcon) {
-    emptyIcon.style.display = 'none';
+  const icon = statusElement.querySelector('.status-icon') as HTMLElement;
+  if (icon) {
+    icon.style.display = 'none';
   }
 
   container.innerHTML = `

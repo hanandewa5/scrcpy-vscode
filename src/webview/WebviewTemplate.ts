@@ -491,95 +491,77 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
       to { transform: rotate(360deg); }
     }
 
-    /* Status overlay */
+    /* Status overlay — VS Code welcome view style */
     .status {
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
       color: var(--vscode-foreground, #ccc);
       font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
       font-size: 13px;
       text-align: center;
-      padding: 28px 32px;
-      max-width: 90%;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      /* Glass-morphism */
-      background: var(--glass-bg);
-      backdrop-filter: blur(var(--glass-blur));
-      -webkit-backdrop-filter: blur(var(--glass-blur));
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--glass-border-light);
-      box-shadow: var(--glass-shadow);
+      padding: 20px;
       z-index: 10;
-      /* Entrance animation */
       animation: statusFadeIn var(--transition-medium) ease-out;
     }
 
     @keyframes statusFadeIn {
-      from {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0.95);
-      }
-      to {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-      }
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
     .status.hidden {
       display: none;
     }
 
-    .status.warning {
-      border-color: rgba(207, 147, 0, 0.4);
-      background: rgba(30, 28, 20, 0.8);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+    .status .status-icon {
+      color: var(--vscode-descriptionForeground, #969696);
+      margin-bottom: 14px;
+      line-height: 0;
     }
 
-    .status.warning .warning-title-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
+    .status .status-icon.error-icon {
+      color: var(--vscode-errorForeground, #f48771);
     }
 
-    .status.warning .warning-icon {
+    .status .status-icon.warning-icon {
       color: var(--vscode-inputValidation-warningBorder, #cf9300);
-      display: flex;
-      align-items: center;
     }
 
-    .status.warning .warning-title {
-      font-weight: 600;
-      color: var(--vscode-foreground, #ccc);
+    #status-text {
+      color: var(--vscode-descriptionForeground, #969696);
+      line-height: 1.4;
+      max-width: 260px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
     }
 
-    .status.warning .warning-subtitle {
+    #status-text.error {
+      color: var(--vscode-errorForeground, #f48771);
+    }
+
+    .status .warning-subtitle {
       color: var(--vscode-descriptionForeground, #969696);
       font-size: 12px;
+      margin-top: 4px;
+      max-width: 260px;
     }
 
     .status .spinner {
-      width: 48px;
-      height: 48px;
-      border: 3px solid rgba(255, 255, 255, 0.15);
-      border-top-color: var(--vscode-focusBorder, #0078d4);
+      width: 24px;
+      height: 24px;
+      border: 2px solid transparent;
+      border-top-color: var(--vscode-progressBar-background, #0078d4);
       border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 16px;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 14px;
     }
 
     @keyframes spin {
       to { transform: rotate(360deg); }
-    }
-
-    .error {
-      color: var(--vscode-errorForeground, #f48771);
     }
 
     .stats {
@@ -703,38 +685,52 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
       background: #d00 !important;
     }
 
-    .reconnect-btn {
-      margin-top: 16px;
-      padding: 10px 24px;
-      /* Glass-morphism */
-      background: var(--glass-bg);
-      backdrop-filter: blur(var(--glass-blur));
-      -webkit-backdrop-filter: blur(var(--glass-blur));
-      color: var(--vscode-foreground, #fff);
-      border: 1px solid var(--glass-border-light);
-      border-radius: var(--radius-full);
+    .status-btn {
+      padding: 4px 14px;
+      border: none;
+      border-radius: 2px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 500;
       font-family: var(--vscode-font-family);
-      transition: all var(--transition-fast);
-      box-shadow: var(--glass-shadow-subtle);
+      line-height: 22px;
+      width: 100%;
+      max-width: 260px;
+      background: var(--vscode-button-secondaryBackground, #3a3d41);
+      color: var(--vscode-button-secondaryForeground, #fff);
     }
 
-    .reconnect-btn:hover {
-      background: rgba(45, 45, 45, 0.85);
-      border-color: rgba(255, 255, 255, 0.2);
-      transform: translateY(-1px);
-      box-shadow: var(--glass-shadow);
+    .status-btn:hover {
+      background: var(--vscode-button-secondaryHoverBackground, #45494e);
     }
 
-    .reconnect-btn:active {
-      transform: scale(0.98);
+    .status-btn:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #0078d4);
+      outline-offset: 1px;
     }
 
-    .reconnect-btn:focus-visible {
-      outline: 2px solid var(--vscode-focusBorder, #0078d4);
-      outline-offset: 2px;
+    .status-btn.primary {
+      background: var(--vscode-button-background, #0078d4);
+      color: var(--vscode-button-foreground, #fff);
+    }
+
+    .status-btn.primary:hover {
+      background: var(--vscode-button-hoverBackground, #026ec1);
+    }
+
+    .status-link {
+      background: none;
+      border: none;
+      color: var(--vscode-textLink-foreground, #3794ff);
+      font-size: 13px;
+      font-family: var(--vscode-font-family);
+      cursor: pointer;
+      padding: 0;
+      text-decoration: none;
+    }
+
+    .status-link:hover {
+      color: var(--vscode-textLink-activeForeground, #3794ff);
+      text-decoration: underline;
     }
 
     /* QR Code pairing in empty state */
@@ -743,7 +739,9 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
       flex-direction: column;
       align-items: center;
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      width: 100%;
+      max-width: 260px;
     }
 
     .qr-pair-image {
@@ -751,7 +749,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
       height: 180px;
       max-width: 180px;
       min-width: 180px;
-      border-radius: var(--radius-md, 8px);
+      border-radius: 4px;
       background: white;
       padding: 4px;
       object-fit: contain;
@@ -760,13 +758,12 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
     .qr-pair-status {
       font-size: 12px;
-      opacity: 0.7;
+      color: var(--vscode-descriptionForeground, #969696);
       text-align: center;
     }
 
     .qr-pair-status.error {
       color: var(--vscode-errorForeground, #f48771);
-      opacity: 1;
     }
 
     /* Screenshot preview overlay */
@@ -929,16 +926,6 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
     .screenshot-preview-btn.secondary:hover {
       background: rgba(45, 45, 45, 0.85);
-    }
-
-    .reconnect-btn.primary {
-      background: rgba(0, 120, 212, 0.85);
-      border-color: rgba(255, 255, 255, 0.15);
-      color: #fff;
-    }
-
-    .reconnect-btn.primary:hover {
-      background: rgba(16, 110, 190, 0.95);
     }
 
     /* Control Center overlay */
@@ -1447,7 +1434,6 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
         animation: spin 2s linear infinite; /* Keep spinner but slower */
       }
 
-      .reconnect-btn,
       .screenshot-preview-btn,
       .screenshot-preview-close,
       .settings-group,
@@ -1472,16 +1458,11 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     }
 
     body.vscode-light .status .spinner {
-      border-color: rgba(0, 0, 0, 0.12);
+      border-color: transparent;
     }
 
     body.vscode-light .recording-indicator {
       border-color: rgba(0, 0, 0, 0.12);
-    }
-
-    body.vscode-light .reconnect-btn:hover {
-      background: rgba(0, 0, 0, 0.08);
-      border-color: rgba(0, 0, 0, 0.15);
     }
 
     body.vscode-light .screenshot-preview-btn.secondary:hover {
@@ -1497,10 +1478,6 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     }
 
     body.vscode-light .screenshot-preview-btn {
-      border-color: rgba(0, 0, 0, 0.12);
-    }
-
-    body.vscode-light .reconnect-btn.primary {
       border-color: rgba(0, 0, 0, 0.12);
     }
 

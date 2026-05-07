@@ -84,6 +84,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     waitingForDevice: vscode.l10n.t('Waiting for device...'),
     pairing: vscode.l10n.t('Pairing'),
     connecting: vscode.l10n.t('Connecting'),
+    qrRetry: vscode.l10n.t('Refresh QR Code'),
   };
 
   return `<!DOCTYPE html>
@@ -395,9 +396,9 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     .control-toolbar {
       display: flex;
       align-items: center;
-      padding: 6px 8px;
+      padding: 2px 4px;
       background: var(--vscode-sideBar-background);
-      border-top: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.1));
+      border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, rgba(255, 255, 255, 0.1)));
       flex-shrink: 0;
       position: relative;
       z-index: 101;
@@ -409,7 +410,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
     .toolbar-group {
       display: flex;
-      gap: 3px;
+      gap: 0;
       flex: 1;
     }
 
@@ -437,40 +438,39 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     }
 
     .control-btn {
-      min-width: 28px;
-      height: 26px;
-      padding: 4px 5px;
-      background: var(--vscode-button-secondaryBackground, #3a3d41);
-      color: var(--vscode-button-secondaryForeground, #ccc);
-      border: 1px solid var(--vscode-input-border, #3a3d41);
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      background: transparent;
+      color: var(--vscode-icon-foreground, var(--vscode-foreground, #ccc));
+      border: none;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 10px;
-      font-family: var(--vscode-font-family);
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.1s;
     }
 
     .control-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground, #45494e);
+      background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
     }
 
     .control-btn:active {
-      background: var(--vscode-button-background, #0078d4);
-      color: var(--vscode-button-foreground, white);
-      transform: scale(0.95);
+      background: var(--vscode-toolbar-activeBackground, rgba(99, 102, 103, 0.31));
+    }
+
+    .control-btn:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #0078d4);
+      outline-offset: -1px;
     }
 
     .control-btn.loading {
       pointer-events: none;
-      opacity: 0.7;
+      opacity: 0.5;
     }
 
     .control-btn.active {
-      background: var(--vscode-button-background, #0078d4);
-      color: var(--vscode-button-foreground, white);
+      color: var(--vscode-button-background, #0078d4);
     }
 
     .control-toolbar.control-center-open .control-btn:not(.active) {
@@ -481,7 +481,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
       display: inline-block;
       width: 12px;
       height: 12px;
-      border: 2px solid var(--vscode-button-secondaryForeground, #ccc);
+      border: 2px solid currentColor;
       border-top-color: transparent;
       border-radius: 50%;
       animation: btn-spin 0.8s linear infinite;
@@ -676,19 +676,17 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     }
 
     .control-btn.recording {
-      background: #c00 !important;
-      color: white !important;
-      border-color: #c00 !important;
+      color: #e51400 !important;
     }
 
     .control-btn.recording:hover {
-      background: #d00 !important;
+      background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
     }
 
     .status-btn {
       padding: 4px 14px;
       border: none;
-      border-radius: 2px;
+      border-radius: 4px;
       cursor: pointer;
       font-size: 13px;
       font-family: var(--vscode-font-family);
@@ -764,6 +762,10 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
     .qr-pair-status.error {
       color: var(--vscode-errorForeground, #f48771);
+    }
+
+    .qr-retry-btn {
+      margin-top: 8px;
     }
 
     /* Screenshot preview overlay */

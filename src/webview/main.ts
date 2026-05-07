@@ -83,6 +83,7 @@ declare global {
       waitingForDevice: string;
       pairing: string;
       connecting: string;
+      qrRetry: string;
     };
   }
 }
@@ -1474,6 +1475,7 @@ function showEmptyState() {
     btnContainer.appendChild(qrContainer);
 
     const pairBtn = document.createElement('button');
+    pairBtn.id = 'qr-pair-btn';
     pairBtn.className = 'status-btn primary';
     pairBtn.textContent = window.l10n.pairWithQR;
     pairBtn.onclick = () => {
@@ -1544,10 +1546,14 @@ function handleQRPairingData(qrDataUrl: string): void {
     return;
   }
 
-  // Hide the phone icon when showing QR
+  // Hide the phone icon and pair button when showing QR
   const icon = statusElement.querySelector('.status-icon') as HTMLElement;
   if (icon) {
     icon.style.display = 'none';
+  }
+  const pairBtn = document.getElementById('qr-pair-btn');
+  if (pairBtn) {
+    pairBtn.style.display = 'none';
   }
 
   container.innerHTML = `
@@ -1593,6 +1599,19 @@ function handleQRPairingStatus(
     case 'error':
       statusEl.textContent = text || 'Error';
       statusEl.classList.add('error');
+      // Add retry button below the error
+      {
+        let retryBtn = container.querySelector('.qr-retry-btn') as HTMLElement;
+        if (!retryBtn) {
+          retryBtn = document.createElement('button');
+          retryBtn.className = 'status-link qr-retry-btn';
+          retryBtn.textContent = window.l10n.qrRetry;
+          retryBtn.onclick = () => {
+            vscode.postMessage({ type: 'startQRPairing' });
+          };
+          container.appendChild(retryBtn);
+        }
+      }
       break;
   }
 }

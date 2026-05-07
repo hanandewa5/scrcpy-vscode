@@ -78,6 +78,11 @@ declare global {
       stayAwake: string;
       screenOff: string;
       power: string;
+      pairWithQR: string;
+      scanQRToPair: string;
+      waitingForDevice: string;
+      pairing: string;
+      connecting: string;
     };
   }
 }
@@ -219,6 +224,7 @@ let recordBtn: HTMLElement | null = null;
 let recordingIndicator: HTMLElement | null = null;
 let recordingTime: HTMLElement | null = null;
 let currentScreenshotData: string | null = null;
+let qrPairingActive = false;
 
 // Control Center
 let controlCenterOverlay: HTMLElement | null = null;
@@ -868,6 +874,14 @@ function handleMessage(event: MessageEvent) {
     case 'deviceSettingApplied':
       handleDeviceSettingApplied(message.setting, message.success, message.error);
       break;
+
+    case 'qrPairingData':
+      handleQRPairingData(message.qrDataUrl);
+      break;
+
+    case 'qrPairingStatus':
+      handleQRPairingStatus(message.status, message.text);
+      break;
   }
 }
 
@@ -1470,6 +1484,22 @@ function showEmptyState() {
     statusTextElement.textContent = window.l10n.noDevicesConnected;
     statusTextElement.classList.remove('error');
 
+    // QR code container (will be populated when user clicks "Pair with QR")
+    const qrContainer = document.createElement('div');
+    qrContainer.className = 'qr-pair-container';
+    qrContainer.id = 'qr-pair-container';
+    btnContainer.appendChild(qrContainer);
+
+    const pairBtn = document.createElement('button');
+    pairBtn.className = 'reconnect-btn primary';
+    pairBtn.textContent = window.l10n.pairWithQR;
+    pairBtn.onclick = () => {
+      if (!qrPairingActive) {
+        vscode.postMessage({ type: 'startQRPairing' });
+      }
+    };
+    btnContainer.appendChild(pairBtn);
+
     const addBtn = document.createElement('button');
     addBtn.className = 'reconnect-btn';
     addBtn.textContent = window.l10n.addDevice;
@@ -1537,6 +1567,69 @@ function showEmptyState() {
   }
 
   statusElement.classList.remove('hidden');
+}
+
+/**
+ * Handle QR pairing data from extension — show QR code inline in empty state
+ */
+function handleQRPairingData(qrDataUrl: string): void {
+  qrPairingActive = true;
+  const container = document.getElementById('qr-pair-container');
+  if (!container) {
+    return;
+  }
+
+  // Hide the phone icon when showing QR
+  const emptyIcon = statusElement.querySelector('.empty-icon') as HTMLElement;
+  if (emptyIcon) {
+    emptyIcon.style.display = 'none';
+  }
+
+  container.innerHTML = `
+    <img src="${qrDataUrl}" alt="QR Code" class="qr-pair-image" />
+    <div class="qr-pair-status">${window.l10n.scanQRToPair}</div>
+  `;
+}
+
+/**
+ * Handle QR pairing status updates from extension
+ */
+function handleQRPairingStatus(
+  status: 'waiting' | 'pairing' | 'connecting' | 'done' | 'error',
+  text?: string
+): void {
+  if (status === 'done' || status === 'error') {
+    qrPairingActive = false;
+  }
+
+  const container = document.getElementById('qr-pair-container');
+  if (!container) {
+    return;
+  }
+
+  const statusEl = container.querySelector('.qr-pair-status');
+  if (!statusEl) {
+    return;
+  }
+
+  switch (status) {
+    case 'waiting':
+      statusEl.textContent = window.l10n.waitingForDevice;
+      break;
+    case 'pairing':
+      statusEl.textContent = window.l10n.pairing + '...';
+      break;
+    case 'connecting':
+      statusEl.textContent = window.l10n.connecting + '...';
+      break;
+    case 'done':
+      // State snapshot will handle UI transition
+      break;
+    case 'error':
+      statusEl.textContent = text || 'Error';
+      statusEl.classList.add('error');
+      break;
+  }
 }
 
 /**

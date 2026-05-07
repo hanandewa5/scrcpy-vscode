@@ -30,6 +30,7 @@ export type WebviewAction =
   | { type: 'showDevicePicker' }
   | { type: 'reconnect' }
   | { type: 'connectDevice'; serial: string }
+  | { type: 'startQRPairing' }
 
   // Touch/Mouse input
   | {

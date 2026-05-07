@@ -4,7 +4,19 @@
     {
       "type": "npm",
       "script": "watch",
-      "problemMatcher": "$tsc-watch",
+      "problemMatcher": {
+        "owner": "webpack",
+        "severity": "error",
+        "pattern": {
+          "regexp": "^ERROR in (.+)",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Compiler is watching files for updates",
+          "endsPattern": "compiled successfully|compiled with"
+        }
+      },
       "isBackground": true,
       "presentation": {
         "reveal": "never"

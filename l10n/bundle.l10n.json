@@ -146,5 +146,10 @@
   "Select recording save folder": "Select recording save folder",
   "Select default APK folder": "Select default APK folder",
   "Setting updated: {0}": "Setting updated: {0}",
-  "Setting reset to default": "Setting reset to default"
+  "Setting reset to default": "Setting reset to default",
+  "Pair with QR Code": "Pair with QR Code",
+  "Scan with your device to pair": "Scan with your device to pair",
+  "Waiting for device...": "Waiting for device...",
+  "Pairing": "Pairing",
+  "Connecting": "Connecting"
 }

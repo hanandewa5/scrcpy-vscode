@@ -8,6 +8,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { Bonjour, Service } from 'bonjour-service';
 import { ScrcpyConnection, ScrcpyConfig, ClipboardAPI, VideoCodecType } from './ScrcpyConnection';
 import { execFile, execFileSync, spawn, ChildProcess } from 'child_process';
 import { AppStateManager } from './AppStateManager';
@@ -24,6 +25,28 @@ import { ActionType } from './types/Actions';
 
 // Re-export types for backward compatibility
 export type { DeviceInfo, DeviceDetailedInfo, ConnectionState };
+
+/**
+ * Shared output channel for WiFi pairing diagnostics. Visible in
+ * View > Output > "Scrcpy: WiFi Pairing".
+ */
+let pairingLogChannel: vscode.OutputChannel | undefined;
+function pairLog(msg: string): void {
+  if (!pairingLogChannel) {
+    pairingLogChannel = vscode.window.createOutputChannel('Scrcpy: WiFi Pairing');
+  }
+  const ts = new Date().toISOString().split('T')[1].replace('Z', '');
+  const line = `[${ts}] ${msg}`;
+  pairingLogChannel.appendLine(line);
+  // Also log to the extension host console for DevTools visibility.
+  console.log('[scrcpy-pair]', msg);
+}
+export function showPairingLog(): void {
+  if (!pairingLogChannel) {
+    pairingLogChannel = vscode.window.createOutputChannel('Scrcpy: WiFi Pairing');
+  }
+  pairingLogChannel.show(true);
+}
 
 /**
  * Callback types for video/audio frames (high-frequency, bypass state)
@@ -480,6 +503,164 @@ export class DeviceService {
   }
 
   /**
+   * Browse for an `_adb-tls-pairing._tcp` service via mDNS using a real
+   * Bonjour browser (independent of `adb mdns services`, which is broken
+   * with the Openscreen backend on macOS).
+   *
+   * Resolves with `host:port` of the first service whose instance name
+   * matches `serviceName`. Rejects on timeout/abort.
+   */
+  async findPairingServiceViaBonjour(
+    serviceName: string,
+    timeoutMs: number = 120000,
+    signal?: AbortSignal
+  ): Promise<string> {
+    pairLog(
+      `Bonjour: browsing _adb-tls-pairing._tcp for instance "${serviceName}" (timeout ${timeoutMs}ms)`
+    );
+    return this.browseBonjour('adb-tls-pairing', timeoutMs, signal, (svc) => {
+      pairLog(
+        `Bonjour pairing svc seen: name=${svc.name} host=${svc.host} port=${svc.port} ` +
+          `addrs=${(svc.addresses || []).join(',')} referer=${svc.referer?.address || '?'}`
+      );
+      if (svc.name !== serviceName) {
+        return null;
+      }
+      const host = svc.referer?.address || svc.host;
+      if (!host || !svc.port) {
+        return null;
+      }
+      return `${host}:${svc.port}`;
+    }).then(
+      (addr) => {
+        pairLog(`Bonjour: pairing service resolved -> ${addr}`);
+        return addr;
+      },
+      (err) => {
+        pairLog(
+          `Bonjour: pairing browse failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+        throw err;
+      }
+    );
+  }
+
+  /**
+   * Browse for an `_adb-tls-connect._tcp` service via mDNS using a real
+   * Bonjour browser. Resolves with `host:port` for the first service
+   * whose host address matches `ipAddress`.
+   */
+  async findConnectServiceViaBonjour(
+    ipAddress: string,
+    timeoutMs: number = 15000,
+    signal?: AbortSignal
+  ): Promise<string> {
+    pairLog(`Bonjour: browsing _adb-tls-connect._tcp for IP ${ipAddress} (timeout ${timeoutMs}ms)`);
+    return this.browseBonjour('adb-tls-connect', timeoutMs, signal, (svc) => {
+      const addresses = [svc.referer?.address, ...(svc.addresses || [])].filter(
+        (a): a is string => typeof a === 'string'
+      );
+      pairLog(
+        `Bonjour connect svc seen: name=${svc.name} host=${svc.host} port=${svc.port} ` +
+          `addrs=${addresses.join(',')}`
+      );
+      if (!addresses.includes(ipAddress)) {
+        return null;
+      }
+      if (!svc.port) {
+        return null;
+      }
+      return `${ipAddress}:${svc.port}`;
+    }).then(
+      (addr) => {
+        pairLog(`Bonjour: connect service resolved -> ${addr}`);
+        return addr;
+      },
+      (err) => {
+        pairLog(
+          `Bonjour: connect browse failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+        throw err;
+      }
+    );
+  }
+
+  /**
+   * Generic Bonjour browser: subscribes to `_<type>._tcp` and resolves
+   * with the first service for which `match` returns a non-null value.
+   * Also runs a one-shot `find()` so already-cached services resolve
+   * immediately.
+   */
+  private browseBonjour(
+    type: string,
+    timeoutMs: number,
+    signal: AbortSignal | undefined,
+    match: (svc: Service) => string | null
+  ): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      let bonjour: Bonjour;
+      try {
+        bonjour = new Bonjour();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        pairLog(`Bonjour: failed to bind UDP 5353 (${message}). Likely firewall/permission issue.`);
+        reject(err);
+        return;
+      }
+      let settled = false;
+
+      const cleanup = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        signal?.removeEventListener('abort', onAbort);
+        try {
+          browser.stop();
+        } catch {
+          // ignore
+        }
+        try {
+          bonjour.destroy();
+        } catch {
+          // ignore
+        }
+      };
+
+      const onAbort = () => {
+        cleanup();
+        reject(new Error('aborted'));
+      };
+
+      const onService = (svc: Service) => {
+        const addr = match(svc);
+        if (addr) {
+          cleanup();
+          resolve(addr);
+        }
+      };
+
+      if (signal?.aborted) {
+        bonjour.destroy();
+        reject(new Error('aborted'));
+        return;
+      }
+      signal?.addEventListener('abort', onAbort);
+
+      const browser = bonjour.find({ type, protocol: 'tcp' }, onService);
+      browser.on('up', onService);
+
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timed out waiting for _${type}._tcp service`));
+      }, timeoutMs);
+    });
+  }
+
+  /**
    * Poll `adb mdns services` until a service whose instance name matches
    * `serviceName` is discovered. Returns the device's pairing `host:port`.
    *
@@ -498,6 +679,7 @@ export class DeviceService {
   ): Promise<string> {
     const adbCmd = this.getAdbCommand();
     const startedAt = Date.now();
+    pairLog(`adb mdns: polling for pairing service "${serviceName}" (timeout ${timeoutMs}ms)`);
 
     // Make sure mDNS discovery is enabled in adbd. Best-effort, ignored on
     // older adb versions.
@@ -571,6 +753,188 @@ export class DeviceService {
   }
 
   /**
+   * Poll `adb mdns services` for an `_adb-tls-connect._tcp` advertisement
+   * matching the given IP address. Used after QR pairing to auto-discover
+   * the device's connection port (different from the pairing port).
+   *
+   * Returns `host:port` on success, rejects on timeout/abort.
+   */
+  async findMdnsConnectService(
+    ipAddress: string,
+    timeoutMs: number = 15000,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const adbCmd = this.getAdbCommand();
+    const startedAt = Date.now();
+    pairLog(`adb mdns: polling for connect service @ ${ipAddress} (timeout ${timeoutMs}ms)`);
+
+    return new Promise<string>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup();
+        reject(new Error('aborted'));
+      };
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        signal?.removeEventListener('abort', onAbort);
+      };
+
+      if (signal?.aborted) {
+        reject(new Error('aborted'));
+        return;
+      }
+      signal?.addEventListener('abort', onAbort);
+
+      let timer: NodeJS.Timeout | null = null;
+
+      const tick = () => {
+        if (Date.now() - startedAt > timeoutMs) {
+          cleanup();
+          reject(new Error('Timed out waiting for device connect service'));
+          return;
+        }
+
+        execFile(adbCmd, ['mdns', 'services'], { timeout: 5000 }, (_err, stdout) => {
+          if (signal?.aborted) {
+            return;
+          }
+
+          const lines = (stdout || '').split('\n');
+          for (const line of lines) {
+            if (!line.includes('_adb-tls-connect')) {
+              continue;
+            }
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 3) {
+              continue;
+            }
+            const addr = parts[parts.length - 1];
+            const match = addr.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/);
+            if (match && match[1] === ipAddress) {
+              cleanup();
+              resolve(addr);
+              return;
+            }
+          }
+
+          timer = setTimeout(tick, 500);
+        });
+      };
+
+      tick();
+    });
+  }
+
+  /**
+   * Poll `adb devices -l` for a connected device whose serial starts with
+   * the given IP address. Used after QR/code pairing as a robust fallback
+   * when `adb mdns services` is broken on the host but adb's internal
+   * mDNS auto-connect still works (or the user manually connected).
+   *
+   * Matches both forms:
+   *   - `<ip>:<port>` (plain WiFi)
+   *   - `adb-XXXX-YYY._adb-tls-connect._tcp` (mDNS auto-connected)
+   *
+   * For the mDNS form we follow up with a `getprop` to confirm the IP.
+   * Returns the matching serial on success, rejects on timeout/abort.
+   */
+  async findConnectedDeviceByIp(
+    ipAddress: string,
+    timeoutMs: number = 10000,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const adbCmd = this.getAdbCommand();
+    const startedAt = Date.now();
+    pairLog(`adb devices: polling for serial matching ${ipAddress} (timeout ${timeoutMs}ms)`);
+
+    return new Promise<string>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup();
+        reject(new Error('aborted'));
+      };
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        signal?.removeEventListener('abort', onAbort);
+      };
+
+      if (signal?.aborted) {
+        reject(new Error('aborted'));
+        return;
+      }
+      signal?.addEventListener('abort', onAbort);
+
+      let timer: NodeJS.Timeout | null = null;
+
+      const tick = () => {
+        if (Date.now() - startedAt > timeoutMs) {
+          cleanup();
+          reject(new Error('Timed out waiting for device to appear in adb devices'));
+          return;
+        }
+
+        execFile(adbCmd, ['devices', '-l'], { timeout: 5000 }, (_err, stdout) => {
+          if (signal?.aborted) {
+            return;
+          }
+
+          const lines = (stdout || '').split('\n');
+          const candidates: string[] = [];
+          for (const line of lines.slice(1)) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 2 || parts[1] !== 'device') {
+              continue;
+            }
+            const serial = parts[0];
+            // Direct IP match: serial is `<ip>:<port>`
+            if (serial.startsWith(`${ipAddress}:`)) {
+              cleanup();
+              resolve(serial);
+              return;
+            }
+            // mDNS-auto-connected: verify by querying device IP
+            if (serial.includes('_adb-tls-connect')) {
+              candidates.push(serial);
+            }
+          }
+
+          // Verify mDNS candidates one at a time
+          const verifyNext = (i: number) => {
+            if (i >= candidates.length) {
+              timer = setTimeout(tick, 500);
+              return;
+            }
+            execFile(
+              adbCmd,
+              ['-s', candidates[i], 'shell', 'ip', '-f', 'inet', 'addr', 'show', 'wlan0'],
+              { timeout: 3000 },
+              (err, out) => {
+                if (signal?.aborted) {
+                  return;
+                }
+                if (!err && out.includes(`inet ${ipAddress}/`)) {
+                  cleanup();
+                  resolve(candidates[i]);
+                  return;
+                }
+                verifyNext(i + 1);
+              }
+            );
+          };
+
+          verifyNext(0);
+        });
+      };
+
+      tick();
+    });
+  }
+
+  /**
    * Pair with a device using a known password (non-interactive).
    *
    * Newer adb (>= 30.0.0) supports `adb pair <addr> <password>`. We still
@@ -579,10 +943,14 @@ export class DeviceService {
    */
   async pairWifiWithPassword(address: string, password: string): Promise<void> {
     const adbCmd = this.getAdbCommand();
+    pairLog(`adb pair ${address} <password>`);
 
     return new Promise((resolve, reject) => {
       execFile(adbCmd, ['pair', address, password], { timeout: 30000 }, (error, stdout, stderr) => {
         const output = (stdout + stderr).toLowerCase();
+        pairLog(
+          `adb pair result: code=${error?.code ?? 0} stdout=${stdout.trim()} stderr=${stderr.trim()}`
+        );
         if (!error && (output.includes('successfully paired') || output.includes('paired to'))) {
           resolve();
           return;
@@ -590,6 +958,7 @@ export class DeviceService {
 
         // Older adb: fall back to interactive prompt.
         if (output.includes('usage:') || output.includes('enter pairing code')) {
+          pairLog('adb pair: falling back to interactive mode');
           this.pairWifi(address, password).then(resolve, reject);
           return;
         }

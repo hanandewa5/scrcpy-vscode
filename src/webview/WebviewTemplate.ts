@@ -79,6 +79,11 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     stayAwake: vscode.l10n.t('Stay Awake'),
     screenOff: vscode.l10n.t('Screen Off'),
     power: vscode.l10n.t('Power'),
+    pairWithQR: vscode.l10n.t('Pair with QR Code'),
+    scanQRToPair: vscode.l10n.t('Scan with your device to pair'),
+    waitingForDevice: vscode.l10n.t('Waiting for device...'),
+    pairing: vscode.l10n.t('Pairing'),
+    connecting: vscode.l10n.t('Connecting'),
   };
 
   return `<!DOCTYPE html>
@@ -730,6 +735,38 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     .reconnect-btn:focus-visible {
       outline: 2px solid var(--vscode-focusBorder, #0078d4);
       outline-offset: 2px;
+    }
+
+    /* QR Code pairing in empty state */
+    .qr-pair-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .qr-pair-image {
+      width: 180px;
+      height: 180px;
+      max-width: 180px;
+      min-width: 180px;
+      border-radius: var(--radius-md, 8px);
+      background: white;
+      padding: 4px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .qr-pair-status {
+      font-size: 12px;
+      opacity: 0.7;
+      text-align: center;
+    }
+
+    .qr-pair-status.error {
+      color: var(--vscode-errorForeground, #f48771);
+      opacity: 1;
     }
 
     /* Screenshot preview overlay */

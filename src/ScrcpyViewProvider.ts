@@ -11,7 +11,7 @@ import * as crypto from 'crypto';
 import * as QRCode from 'qrcode';
 import { getHtmlForWebview } from './webview/WebviewTemplate';
 import { ScrcpyConfig } from './ScrcpyConnection';
-import { DeviceService } from './DeviceService';
+import { DeviceService, showPairingLog } from './DeviceService';
 import { AppStateManager, Unsubscribe } from './AppStateManager';
 import { ToolCheckResult } from './ToolChecker';
 import { ToolNotFoundError, ToolErrorCode, DeviceUISettings } from './types/AppState';
@@ -658,6 +658,10 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
         await this._showDevicePicker();
         break;
 
+      case 'startQRPairing':
+        await this._startInlineQRPairing();
+        break;
+
       case 'connectDevice':
         if (this._deviceService && message.serial) {
           const devices = await this._deviceService.getAvailableDevices();
@@ -1010,6 +1014,138 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Inline QR pairing triggered from the empty state in the sidebar webview.
+   * Generates a QR code, sends it to the webview, and runs the mDNS discovery
+   * + pair + connect flow in the background.
+   */
+  private async _startInlineQRPairing(): Promise<void> {
+    if (!this._deviceService) {
+      this._initializeAndConnect();
+    }
+    if (!this._deviceService) {
+      return;
+    }
+
+    const serviceName = `vscode-${crypto.randomBytes(4).toString('hex')}`;
+    const password = crypto.randomBytes(8).toString('hex');
+    const qrPayload = `WIFI:T:ADB;S:${serviceName};P:${password};;`;
+
+    let qrDataUrl: string;
+    try {
+      qrDataUrl = await QRCode.toDataURL(qrPayload, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 200,
+      });
+    } catch {
+      return;
+    }
+
+    // Send QR to webview
+    this._view?.webview.postMessage({ type: 'qrPairingData', qrDataUrl });
+
+    console.log('[scrcpy-pair] inline QR shown. service=', serviceName);
+
+    const cancelController = new AbortController();
+
+    // If the view is disposed while pairing, abort.
+    const disposeListener = this._view?.onDidDispose(() => {
+      cancelController.abort();
+    });
+
+    try {
+      // 1. Discover pairing service
+      let pairingAddress: string;
+      try {
+        pairingAddress = await Promise.any([
+          this._deviceService.findPairingServiceViaBonjour(
+            serviceName,
+            120000,
+            cancelController.signal
+          ),
+          this._deviceService.findMdnsPairingService(serviceName, 120000, cancelController.signal),
+        ]);
+      } catch {
+        this._view?.webview.postMessage({
+          type: 'qrPairingStatus',
+          status: 'error',
+          text: 'Discovery timed out',
+        });
+        return;
+      }
+
+      // 2. Pair
+      this._view?.webview.postMessage({ type: 'qrPairingStatus', status: 'pairing' });
+      try {
+        await this._deviceService.pairWifiWithPassword(pairingAddress, password);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        this._view?.webview.postMessage({ type: 'qrPairingStatus', status: 'error', text: msg });
+        return;
+      }
+
+      // 3. Auto-connect
+      this._view?.webview.postMessage({ type: 'qrPairingStatus', status: 'connecting' });
+      const ip = pairingAddress.split(':')[0];
+
+      let connectedSerial: string | undefined;
+      try {
+        const addr = await Promise.any([
+          this._deviceService.findConnectServiceViaBonjour(ip, 10000, cancelController.signal),
+          this._deviceService.findMdnsConnectService(ip, 10000, cancelController.signal),
+        ]);
+        const [mdnsIp, mdnsPortStr] = addr.split(':');
+        const info = await this._deviceService.connectWifi(mdnsIp, parseInt(mdnsPortStr, 10));
+        connectedSerial = info.serial;
+      } catch {
+        // Fall through
+      }
+
+      if (!connectedSerial) {
+        try {
+          connectedSerial = await this._deviceService.findConnectedDeviceByIp(
+            ip,
+            10000,
+            cancelController.signal
+          );
+        } catch {
+          // Fall through
+        }
+      }
+
+      if (connectedSerial) {
+        const devices = await this._deviceService.getAvailableDevices();
+        const device = devices.find((d) => d.serial === connectedSerial) || {
+          serial: connectedSerial,
+          name: connectedSerial,
+          model: undefined,
+        };
+        await this._deviceService.addDevice(device);
+        this._view?.webview.postMessage({ type: 'qrPairingStatus', status: 'done' });
+        vscode.window.showInformationMessage(
+          vscode.l10n.t('Connected to {0} over WiFi', device.name)
+        );
+      } else {
+        // Last resort: ask for address
+        this._view?.webview.postMessage({ type: 'qrPairingStatus', status: 'done' });
+        const connectAddress = await vscode.window.showInputBox({
+          title: vscode.l10n.t('Connect to Paired Device'),
+          prompt: vscode.l10n.t(
+            'Paired! Enter the IP & port shown at the top of the Wireless debugging screen.'
+          ),
+          placeHolder: `${ip}:43251`,
+          value: `${ip}:`,
+        });
+        if (connectAddress) {
+          await this._connectWifiDeviceWithAddress(connectAddress);
+        }
+      }
+    } finally {
+      disposeListener?.dispose();
+    }
+  }
+
+  /**
    * QR-code pairing flow (Android Studio style).
    *
    * 1. Generate a random mDNS service name + password.
@@ -1059,9 +1195,13 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
 
     const cancelController = new AbortController();
     let panelDisposed = false;
+    let pairingSucceeded = false;
     panel.onDidDispose(() => {
       panelDisposed = true;
-      cancelController.abort();
+      // Only abort discovery if the user closed the panel before pairing finished.
+      if (!pairingSucceeded) {
+        cancelController.abort();
+      }
     });
     panel.webview.onDidReceiveMessage((msg) => {
       if (msg?.type === 'cancel') {
@@ -1072,21 +1212,38 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
 
     panel.webview.html = this._getQRPairHtml(qrDataUrl, serviceName);
 
+    console.log('[scrcpy-pair] QR shown. service=', serviceName);
+
     // Wait for the device to scan the QR and advertise itself via mDNS.
+    // We try our own Bonjour browser first (works regardless of adb's mDNS
+    // backend) and fall back to `adb mdns services` if Bonjour throws
+    // (e.g. macOS firewall blocks UDP 5353 for our process).
     let pairingAddress: string;
     try {
-      pairingAddress = await this._deviceService.findMdnsPairingService(
-        serviceName,
-        120000,
-        cancelController.signal
-      );
+      pairingAddress = await Promise.any([
+        this._deviceService.findPairingServiceViaBonjour(
+          serviceName,
+          120000,
+          cancelController.signal
+        ),
+        this._deviceService.findMdnsPairingService(serviceName, 120000, cancelController.signal),
+      ]);
+      console.log('[scrcpy-pair] discovered pairing address:', pairingAddress);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      console.log('[scrcpy-pair] pairing discovery failed:', message);
       if (!panelDisposed) {
         panel.dispose();
       }
       if (message !== 'aborted') {
-        vscode.window.showErrorMessage(vscode.l10n.t('QR pairing failed: {0}', message));
+        const showLog = vscode.l10n.t('Show Log');
+        vscode.window
+          .showErrorMessage(vscode.l10n.t('QR pairing failed: {0}', message), showLog)
+          .then((choice) => {
+            if (choice === showLog) {
+              showPairingLog();
+            }
+          });
       }
       return;
     }
@@ -1095,6 +1252,8 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
 
     try {
       await this._deviceService.pairWifiWithPassword(pairingAddress, password);
+      console.log('[scrcpy-pair] adb pair succeeded');
+      pairingSucceeded = true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!panelDisposed) {
@@ -1108,28 +1267,106 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
       panel.dispose();
     }
 
-    vscode.window.showInformationMessage(
-      vscode.l10n.t('Device paired successfully! Now connecting...')
-    );
-
-    // After pairing, the device's connection port differs from the pairing
-    // port. Ask the user for the connection address shown in Wireless
-    // debugging (typically <ip>:5555 or whatever the device displays).
+    // Auto-connect after pairing. Strategy (in order):
+    //   1. `adb mdns services` for the device's `_adb-tls-connect._tcp`
+    //      advertisement (works when host mDNS is healthy).
+    //   2. Watch `adb devices` — adb often auto-connects mDNS-discovered
+    //      devices internally even when `adb mdns services` is empty
+    //      (e.g. Openscreen backend on macOS). Also catches the case
+    //      where the user manually toggled Wireless debugging.
+    //   3. Prompt the user for the connect address shown on the device.
+    //
+    // Note: Android 11+ wireless debugging uses a *random* port, never
+    // 5555, so we don't bother trying 5555 silently.
     const ip = pairingAddress.split(':')[0];
+
+    let connectedSerial: string | undefined;
+    try {
+      // Use our own Bonjour browser first (matches Android Studio's
+      // approach via jmDNS, independent of adb's broken mDNS on macOS).
+      // Fall back to `adb mdns services` only if Bonjour fails.
+      const addr = await Promise.any([
+        this._deviceService.findConnectServiceViaBonjour(ip, 10000, cancelController.signal),
+        this._deviceService.findMdnsConnectService(ip, 10000, cancelController.signal),
+      ]);
+      console.log('[scrcpy-pair] discovered connect address:', addr);
+      const [mdnsIp, mdnsPortStr] = addr.split(':');
+      const info = await this._deviceService.connectWifi(mdnsIp, parseInt(mdnsPortStr, 10));
+      connectedSerial = info.serial;
+      console.log('[scrcpy-pair] adb connect ok:', connectedSerial);
+    } catch (err) {
+      console.log(
+        '[scrcpy-pair] mDNS connect discovery failed:',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+
+    if (!connectedSerial) {
+      try {
+        connectedSerial = await this._deviceService.findConnectedDeviceByIp(
+          ip,
+          10000,
+          cancelController.signal
+        );
+        console.log('[scrcpy-pair] adb devices fallback found:', connectedSerial);
+      } catch (err) {
+        console.log(
+          '[scrcpy-pair] adb devices fallback failed:',
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    }
+
+    if (connectedSerial) {
+      // Device already in adb devices — just add it to a session.
+      try {
+        const devices = await this._deviceService.getAvailableDevices();
+        const device = devices.find((d) => d.serial === connectedSerial) || {
+          serial: connectedSerial,
+          name: connectedSerial,
+          model: undefined,
+        };
+        await this._deviceService.addDevice(device);
+        vscode.window.showInformationMessage(
+          vscode.l10n.t('Connected to {0} over WiFi', device.name)
+        );
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(vscode.l10n.t('Connection failed: {0}', message));
+        return;
+      }
+    }
+
+    // Fallback: ask the user for the connect address shown on the device.
+    console.log('[scrcpy-pair] auto-connect failed; prompting user for address');
+    const showLog = vscode.l10n.t('Show Log');
+    vscode.window
+      .showWarningMessage(
+        vscode.l10n.t(
+          'Paired, but could not auto-discover the connect port (mDNS unavailable). Open the log to see why.'
+        ),
+        showLog
+      )
+      .then((choice) => {
+        if (choice === showLog) {
+          showPairingLog();
+        }
+      });
     const connectAddress = await vscode.window.showInputBox({
       title: vscode.l10n.t('Connect to Paired Device'),
       prompt: vscode.l10n.t(
-        'Enter the connection address shown in Wireless debugging (not the pairing address)'
+        'Paired! Enter the IP & port shown at the top of the Wireless debugging screen.'
       ),
-      placeHolder: `${ip}:5555`,
-      value: ip,
+      placeHolder: `${ip}:43251`,
+      value: `${ip}:`,
       validateInput: (value) => {
         if (!value) {
           return vscode.l10n.t('Connection address is required');
         }
-        const ipPortRegex = /^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/;
+        const ipPortRegex = /^(\d{1,3}\.){3}\d{1,3}:\d+$/;
         if (!ipPortRegex.test(value)) {
-          return vscode.l10n.t('Enter address as IP or IP:port');
+          return vscode.l10n.t('Enter address as IP:port (e.g., {0})', `${ip}:43251`);
         }
         return undefined;
       },

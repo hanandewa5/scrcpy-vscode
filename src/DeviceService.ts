@@ -1194,6 +1194,16 @@ export class DeviceService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
+      // If the session was disposed (e.g. user pressed Disconnect mid-connect),
+      // don't try fallback codecs or report an error — just clean up.
+      if (session.isDisposed) {
+        if (session.connection) {
+          await session.connection.disconnect().catch(() => {});
+          session.connection = null;
+        }
+        return;
+      }
+
       // Check if we can fall back to another codec
       const fallbackCodec = CODEC_FALLBACK[session.effectiveCodec];
       if (fallbackCodec) {

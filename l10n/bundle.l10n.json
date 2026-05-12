@@ -84,6 +84,7 @@
   "Enable audio forwarding": "Enable audio forwarding",
   "Reconnecting...": "Reconnecting...",
   "Reconnect": "Reconnect",
+  "Disconnect": "Disconnect",
   "No devices connected": "No devices connected",
   "Copying to device...": "Copying to device...",
   "Installed": "Installed",

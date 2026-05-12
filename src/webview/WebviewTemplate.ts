@@ -26,6 +26,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     disableAudio: vscode.l10n.t('Disable audio forwarding'),
     reconnecting: vscode.l10n.t('Reconnecting...'),
     reconnect: vscode.l10n.t('Reconnect'),
+    disconnect: vscode.l10n.t('Disconnect'),
     noDevicesConnected: vscode.l10n.t('No devices connected'),
     addDevice: vscode.l10n.t('Add Device'),
     statsFormat: vscode.l10n.t('{0} FPS | {1} frames'),

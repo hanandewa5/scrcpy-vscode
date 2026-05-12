@@ -84,6 +84,7 @@
   "Enable audio forwarding": "Reenviar audio del dispositivo",
   "Reconnecting...": "Reconectando...",
   "Reconnect": "Reconectar",
+  "Disconnect": "Desconectar",
   "No devices connected": "No hay dispositivos conectados",
   "Copying to device...": "Copiando archivo al dispositivo...",
   "Installed": "APK instalado",

@@ -24,6 +24,7 @@ declare global {
       disableAudio: string;
       reconnecting: string;
       reconnect: string;
+      disconnect: string;
       noDevicesConnected: string;
       addDevice: string;
       statsFormat: string;
@@ -781,9 +782,23 @@ function handleStateSnapshot(state: AppStateSnapshot): void {
       hideStatus();
     } else {
       switch (state.statusMessage.type) {
-        case 'loading':
-          showStatus(state.statusMessage.text);
+        case 'loading': {
+          // If the loading status is tied to a device that's still
+          // connecting/reconnecting, expose a Disconnect button so the user
+          // can abort if it's taking too long.
+          const loadingDeviceId = targetDeviceId ?? activeDeviceId ?? undefined;
+          const loadingDeviceState = loadingDeviceId
+            ? state.devices.find((d) => d.deviceId === loadingDeviceId)
+            : undefined;
+          const cancelable =
+            loadingDeviceState &&
+            (loadingDeviceState.connectionState === 'connecting' ||
+              loadingDeviceState.connectionState === 'reconnecting')
+              ? loadingDeviceState.deviceId
+              : undefined;
+          showStatus(state.statusMessage.text, cancelable);
           break;
+        }
         case 'error':
           showError(state.statusMessage.text);
           break;
@@ -1327,8 +1342,11 @@ function switchToTabByIndex(index: number) {
 
 /**
  * Show status message (with loading spinner)
+ *
+ * If `cancelDeviceId` is provided, a Disconnect button is shown so the user can
+ * abort a connecting/reconnecting attempt that is taking too long.
  */
-function showStatus(text: string) {
+function showStatus(text: string, cancelDeviceId?: string) {
   statusTextElement.textContent = text;
   statusTextElement.classList.remove('error');
   statusElement.classList.remove('hidden');
@@ -1345,10 +1363,27 @@ function showStatus(text: string) {
     icon.style.display = 'none';
   }
 
-  // Remove buttons if exists
-  const btnContainer = statusElement.querySelector('.button-container');
-  if (btnContainer) {
-    btnContainer.remove();
+  // Remove existing buttons
+  const existingBtnContainer = statusElement.querySelector('.button-container');
+  if (existingBtnContainer) {
+    existingBtnContainer.remove();
+  }
+
+  // Add force-disconnect button when requested
+  if (cancelDeviceId) {
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'button-container';
+    btnContainer.style.cssText =
+      'display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 14px; width: 100%; max-width: 260px;';
+
+    const disconnectBtn = document.createElement('button');
+    disconnectBtn.className = 'status-btn';
+    disconnectBtn.textContent = window.l10n.disconnect;
+    disconnectBtn.onclick = () => {
+      vscode.postMessage({ type: 'closeTab', deviceId: cancelDeviceId });
+    };
+    btnContainer.appendChild(disconnectBtn);
+    statusElement.appendChild(btnContainer);
   }
 }
 

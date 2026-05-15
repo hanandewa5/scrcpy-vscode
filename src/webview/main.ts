@@ -1056,6 +1056,14 @@ function createDeviceSession(
         width,
         height,
       });
+    },
+    (codec, message) => {
+      // Notify extension that codec is unsupported
+      vscode.postMessage({
+        type: 'codecUnsupported',
+        codec,
+        message,
+      });
     }
   );
   videoRenderer.setStatsEnabled(showStats);
@@ -1443,7 +1451,7 @@ function showError(text: string) {
   reconnectBtn.textContent = window.l10n.reconnect;
   reconnectBtn.onclick = () => {
     vscode.postMessage({ type: 'reconnect' });
-    showStatus(window.l10n.reconnecting);
+    showStatus(window.l10n.reconnecting, activeDeviceId ?? undefined);
   };
   btnContainer.appendChild(reconnectBtn);
 

@@ -24,6 +24,7 @@ export class VideoRenderer {
   private decoder: VideoDecoder | null = null;
   private onStats: ((fps: number, frames: number) => void) | null;
   private onDimensionsChanged: ((width: number, height: number) => void) | null;
+  private onCodecError: ((codec: string, message: string) => void) | null;
 
   private width = 0;
   private height = 0;
@@ -60,11 +61,13 @@ export class VideoRenderer {
   constructor(
     canvas: HTMLCanvasElement,
     onStats: ((fps: number, frames: number) => void) | null,
-    onDimensionsChanged?: ((width: number, height: number) => void) | null
+    onDimensionsChanged?: ((width: number, height: number) => void) | null,
+    onCodecError?: ((codec: string, message: string) => void) | null
   ) {
     this.canvas = canvas;
     this.onStats = onStats;
     this.onDimensionsChanged = onDimensionsChanged ?? null;
+    this.onCodecError = onCodecError ?? null;
 
     // Check WebCodecs support
     if (typeof VideoDecoder === 'undefined') {
@@ -381,6 +384,7 @@ export class VideoRenderer {
   /**
    * Configure the WebCodecs decoder
    * Uses Annex B format for H.264/H.265, OBU format for AV1
+   * Checks codec support first and notifies via onCodecError if unsupported.
    */
   private configureCodec() {
     if (!this.decoder || !this.pendingConfig) {
@@ -398,25 +402,6 @@ export class VideoRenderer {
 
       console.log(`Configuring codec: ${codecString}, ${this.width}x${this.height}`);
 
-      // Check if codec is supported
-      if (typeof VideoDecoder.isConfigSupported === 'function') {
-        VideoDecoder.isConfigSupported({
-          codec: codecString,
-          codedWidth: this.width,
-          codedHeight: this.height,
-        }).then(
-          (result) => {
-            if (!result.supported) {
-              console.error(`Codec ${codecString} is not supported by this browser`);
-              console.error(
-                `Browser support: H.264 (widely supported), H.265 (Safari, some Chrome), AV1 (modern browsers)`
-              );
-            }
-          },
-          (err) => console.warn('Could not check codec support:', err)
-        );
-      }
-
       // Configure decoder
       // For AV1, include the sequence header in description
       // For H.264/H.265, use Annex B format (no description needed)
@@ -431,6 +416,22 @@ export class VideoRenderer {
         config.description = this.pendingConfig;
       }
 
+      // Check if codec is supported before configuring
+      if (typeof VideoDecoder.isConfigSupported === 'function') {
+        VideoDecoder.isConfigSupported(config).then(
+          (result) => {
+            if (!result.supported) {
+              console.error(`Codec ${codecString} is not supported by this browser`);
+              this.onCodecError?.(
+                this.codec,
+                `Video codec ${this.codec.toUpperCase()} is not supported in this environment. Try switching to H.264 in Settings.`
+              );
+            }
+          },
+          (err) => console.warn('Could not check codec support:', err)
+        );
+      }
+
       this.decoder.configure(config);
 
       this.codecConfigured = true;
@@ -438,8 +439,9 @@ export class VideoRenderer {
       console.log(`Codec configured successfully: ${this.codec}`);
     } catch (error) {
       console.error('Failed to configure codec:', error);
-      console.error(
-        'If you see this error with H.265 or AV1, your browser may not support this codec. Try H.264 instead.'
+      this.onCodecError?.(
+        this.codec,
+        `Failed to configure ${this.codec.toUpperCase()} decoder. Try switching to H.264 in Settings.`
       );
     }
   }

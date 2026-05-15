@@ -114,6 +114,9 @@ export type WebviewAction =
   // Dimension updates (from video parsing)
   | { type: 'dimensionsChanged'; deviceId: string; width: number; height: number }
 
+  // Codec errors
+  | { type: 'codecUnsupported'; codec: string; message: string }
+
   // Control Center
   | { type: 'openControlCenter' }
   | {

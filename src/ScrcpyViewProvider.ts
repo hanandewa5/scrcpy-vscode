@@ -642,6 +642,27 @@ export class ScrcpyViewProvider implements vscode.WebviewViewProvider {
         }
         break;
 
+      case 'codecUnsupported': {
+        const codec = (message as { codec?: string }).codec ?? '';
+        const switchToH264 = vscode.l10n.t('Switch to H.264');
+        vscode.window
+          .showWarningMessage(
+            vscode.l10n.t(
+              'Video codec {0} is not supported in this environment. The screen may appear black.',
+              codec.toUpperCase()
+            ),
+            switchToH264
+          )
+          .then((choice) => {
+            if (choice === switchToH264) {
+              vscode.workspace
+                .getConfiguration('scrcpy')
+                .update('videoCodec', 'h264', vscode.ConfigurationTarget.Global);
+            }
+          });
+        break;
+      }
+
       case 'switchTab':
         if (this._deviceService && message.deviceId) {
           this._deviceService.switchToDevice(message.deviceId);
